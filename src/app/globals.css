@@ -487,7 +487,10 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .animate-rotate-slow,
   .animate-tilt,
-  .animate-pop-in {
+  .animate-pop-in,
+  .animate-pop-out,
+  .animate-blur-in,
+  .animate-blur-out {
     animation: none;
   }
 }
