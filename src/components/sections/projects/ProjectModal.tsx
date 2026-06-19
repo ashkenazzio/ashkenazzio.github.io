@@ -1,10 +1,12 @@
 'use client';
 
+import { useEffect } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { ProjectGallery } from './ProjectGallery';
 import { ProjectCaseStudy } from './ProjectCaseStudy';
 import { ProjectLinks } from './ProjectLinks';
+import { lightboxActive } from './lightboxGuard';
 import type { Project, ProjectImage } from '@/types/project';
 
 interface ProjectModalProps {
@@ -21,6 +23,16 @@ const deriveSlides = (project: Project): ProjectImage[] => {
 };
 
 /**
+ * True when a modal-dismiss attempt should be ignored because it really came
+ * from the gallery lightbox (which is portaled to <body>, so Radix sees it as
+ * "outside"). Covers the lightbox being open, its trailing synthetic events,
+ * and any event whose target is still within the lightbox.
+ */
+const shouldIgnoreDismiss = (target: EventTarget | null) =>
+  lightboxActive() ||
+  (target instanceof Element && !!target.closest('[data-gallery-lightbox]'));
+
+/**
  * Case-study lightbox for a project. Controlled via `open`/`onOpenChange`
  * (no per-card trigger). Built on Radix Dialog, animated with the same
  * CSS data-state mechanism as Sheet.tsx, so Radix natively handles focus
@@ -29,11 +41,37 @@ const deriveSlides = (project: Project): ProjectImage[] => {
  * Responsive layout: a bottom sheet on mobile, a centered panel on desktop.
  */
 export function ProjectModal({ project, open, onOpenChange }: ProjectModalProps) {
+  // Safety net: after the modal closes, if no Radix dialog remains open, make
+  // sure the scroll-lock library didn't leave <body> non-interactive. Without
+  // this, an interrupted close (e.g. a portaled child unmounting mid-close on
+  // touch) can strand `pointer-events: none` on the body, making the whole page
+  // untappable until reload.
+  useEffect(() => {
+    if (open) return;
+    const t = setTimeout(() => {
+      if (!document.querySelector('[role="dialog"][data-state="open"]')) {
+        if (document.body.style.pointerEvents === 'none') {
+          document.body.style.pointerEvents = '';
+        }
+      }
+    }, 350); // after the exit animation + Radix cleanup
+    return () => clearTimeout(t);
+  }, [open]);
+
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <Dialog.Content
+          onPointerDownOutside={e => {
+            if (shouldIgnoreDismiss(e.target)) e.preventDefault();
+          }}
+          onInteractOutside={e => {
+            if (shouldIgnoreDismiss(e.target)) e.preventDefault();
+          }}
+          onFocusOutside={e => {
+            if (shouldIgnoreDismiss(e.target)) e.preventDefault();
+          }}
           className="fixed z-50 bg-card text-card-foreground shadow-xl border border-border
             inset-x-0 bottom-0 max-h-[92vh] rounded-t-2xl
             sm:inset-0 sm:m-auto sm:h-fit sm:max-h-[88vh] sm:max-w-3xl lg:max-w-4xl sm:rounded-2xl

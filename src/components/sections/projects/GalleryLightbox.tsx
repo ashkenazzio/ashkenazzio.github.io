@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { X, ZoomIn, ZoomOut } from 'lucide-react';
 import { getImageSrcSet } from '@/lib/images';
+import { lightboxOpened, lightboxClosed } from './lightboxGuard';
 import type { ProjectImage } from '@/types/project';
 
 interface GalleryLightboxProps {
@@ -43,6 +43,16 @@ export function GalleryLightbox({ image, onClose }: GalleryLightboxProps) {
     lastY: number;
   }>({ startDist: 0, startScale: 1, startTx: 0, startTy: 0, panId: null, lastX: 0, lastY: 0 });
 
+  // Mark the lightbox active for its whole lifetime (plus a grace window after
+  // unmount) so the modal underneath never treats lightbox interactions — or
+  // the residual synthetic mouse event after a touch — as an outside click.
+  useEffect(() => {
+    lightboxOpened();
+    return () => lightboxClosed();
+  }, []);
+
+  const close = useCallback(() => onClose(), [onClose]);
+
   const reset = useCallback(() => {
     setScale(1);
     setTx(0);
@@ -54,13 +64,13 @@ export function GalleryLightbox({ image, onClose }: GalleryLightboxProps) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        close();
       }
     };
     // capture phase so we intercept before Radix's own Escape handler
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
+  }, [close]);
 
   // Block all scroll while the lightbox is open: wheel zooms (and is prevented
   // from reaching the modal body behind), touchmove is swallowed. Native
@@ -150,14 +160,15 @@ export function GalleryLightbox({ image, onClose }: GalleryLightboxProps) {
 
   const zoomed = scale > 1;
 
-  return createPortal(
+  return (
     <div
       ref={overlayRef}
+      data-gallery-lightbox=""
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm touch-none select-none overscroll-contain"
       onClick={e => {
         e.stopPropagation();
         // Click on the backdrop (not the image) closes, but only when not zoomed in.
-        if (!zoomed && e.target === e.currentTarget) onClose();
+        if (!zoomed && e.target === e.currentTarget) close();
       }}
       role="dialog"
       aria-modal="true"
@@ -193,7 +204,7 @@ export function GalleryLightbox({ image, onClose }: GalleryLightboxProps) {
           type="button"
           onClick={e => {
             e.stopPropagation();
-            onClose();
+            close();
           }}
           aria-label="Close zoom"
           className="touch-target grid place-items-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
@@ -231,7 +242,6 @@ export function GalleryLightbox({ image, onClose }: GalleryLightboxProps) {
           Pinch or scroll to zoom · double-tap to reset
         </p>
       </div>
-    </div>,
-    document.body
+    </div>
   );
 }
