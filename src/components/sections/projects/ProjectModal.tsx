@@ -40,22 +40,32 @@ const shouldIgnoreDismiss = (target: EventTarget | null) =>
  *
  * Responsive layout: a bottom sheet on mobile, a centered panel on desktop.
  */
+/**
+ * Safety net for a known Radix + react-remove-scroll race on touch: after the
+ * dialog unmounts, the scroll-lock can fail to remove the artifacts it puts on
+ * <body> — `data-scroll-locked`, inline `pointer-events: none`, and
+ * `overflow: hidden`. When they linger, every tap is dead (only hover works)
+ * until reload. Once no dialog remains open, scrub whichever survived.
+ */
+const scrubScrollLock = () => {
+  if (typeof document === 'undefined') return;
+  if (document.querySelector('[role="dialog"][data-state="open"]')) return;
+  const body = document.body;
+  body.removeAttribute('data-scroll-locked');
+  if (body.style.pointerEvents === 'none') body.style.pointerEvents = '';
+  if (body.style.overflow === 'hidden') body.style.overflow = '';
+};
+
 export function ProjectModal({ project, open, onOpenChange }: ProjectModalProps) {
-  // Safety net: after the modal closes, if no Radix dialog remains open, make
-  // sure the scroll-lock library didn't leave <body> non-interactive. Without
-  // this, an interrupted close (e.g. a portaled child unmounting mid-close on
-  // touch) can strand `pointer-events: none` on the body, making the whole page
-  // untappable until reload.
+  // Scrub after close, twice, to win the cleanup race regardless of timing.
   useEffect(() => {
     if (open) return;
-    const t = setTimeout(() => {
-      if (!document.querySelector('[role="dialog"][data-state="open"]')) {
-        if (document.body.style.pointerEvents === 'none') {
-          document.body.style.pointerEvents = '';
-        }
-      }
-    }, 350); // after the exit animation + Radix cleanup
-    return () => clearTimeout(t);
+    const t1 = setTimeout(scrubScrollLock, 400);
+    const t2 = setTimeout(scrubScrollLock, 900);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [open]);
 
   return (
@@ -63,6 +73,11 @@ export function ProjectModal({ project, open, onOpenChange }: ProjectModalProps)
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <Dialog.Content
+          onCloseAutoFocus={() => {
+            // Radix fires this right after the close completes — scrub on the
+            // next frame, once react-remove-scroll has had its chance.
+            requestAnimationFrame(scrubScrollLock);
+          }}
           onPointerDownOutside={e => {
             if (shouldIgnoreDismiss(e.target)) e.preventDefault();
           }}

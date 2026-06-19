@@ -79,7 +79,15 @@ export const useCarousel = (
   const onDragEnd = useCallback(
     (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
       const power = swipePower(info.offset.x, info.velocity.x);
-      if (Math.abs(info.offset.x) > 4) dragged.current = true;
+      if (Math.abs(info.offset.x) > 4) {
+        dragged.current = true;
+        // Clear on the next tick: this only needs to suppress the click that
+        // immediately follows *this* drag. Leaving it set would poison every
+        // later tap (the card would never open again after one swipe).
+        setTimeout(() => {
+          dragged.current = false;
+        }, 0);
+      }
       if (power < -SWIPE_CONFIDENCE_THRESHOLD) {
         paginate(1);
       } else if (power > SWIPE_CONFIDENCE_THRESHOLD) {
